@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>How a C array works</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#eef2f6; --panel:#fff; --ink:#1b2b3a; --muted:#5d6f80; --line:#cdd8e2;
+  --accent:#0e8c86; --accent-soft:#d6f0ee; --hi:#f2b33d; --hi-soft:#fdf0d0; --bad:#c8452f; --bad-soft:#f9dfd9;
+  --code-bg:#14212d; --code-ink:#dbe6f0; --code-dim:#6f8396;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#10181f; --panel:#1a2530; --ink:#e6eef5; --muted:#93a5b6; --line:#2d3b48;
+    --accent:#3fc4bc; --accent-soft:#16403f; --hi:#f2b33d; --hi-soft:#4a3a14; --bad:#ff7d63; --bad-soft:#4a2219;
+    --code-bg:#0b1218; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#10181f; --panel:#1a2530; --ink:#e6eef5; --muted:#93a5b6; --line:#2d3b48;
+  --accent:#3fc4bc; --accent-soft:#16403f; --hi:#f2b33d; --hi-soft:#4a3a14; --bad:#ff7d63; --bad-soft:#4a2219;
+  --code-bg:#0b1218; color-scheme:dark;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.5}
+main{max-width:1020px;margin:0 auto;padding:28px 18px 40px}
+h1{font-size:clamp(1.6rem,4vw,2.3rem);margin:0 0 6px;letter-spacing:-.01em}
+.lead{margin:0 0 22px;color:var(--muted);max-width:60ch}
+.grid{display:grid;gap:16px;grid-template-columns:1fr}
+@media(min-width:820px){.grid{grid-template-columns:minmax(0,5fr) minmax(0,7fr)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+pre{margin:0;background:var(--code-bg);color:var(--code-ink);border-radius:8px;padding:12px 0;font:400 .92rem/1.75 "JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;overflow-x:auto}
+.ln{display:block;padding:0 14px 0 12px;border-left:3px solid transparent;color:var(--code-dim);white-space:pre}
+.ln.on{background:rgba(242,179,61,.16);border-left-color:var(--hi);color:var(--code-ink)}
+.ln.bad.on{background:rgba(200,69,47,.28);border-left-color:var(--bad)}
+.cm{opacity:.7}
+.mem{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+.col{display:flex;flex-direction:column;align-items:center;min-width:0}
+.addr{font:400 .68rem "JetBrains Mono",ui-monospace,monospace;color:var(--muted);margin-bottom:4px}
+.box{width:100%;aspect-ratio:1/1;max-height:92px;border:2px solid var(--ink);border-radius:8px;display:grid;place-items:center;font:600 clamp(1rem,3.4vw,1.5rem) "JetBrains Mono",ui-monospace,monospace;background:var(--panel);transition:background .25s,border-color .25s,transform .25s}
+.box.empty{color:var(--muted);border-style:dashed;border-color:var(--muted);font-weight:400}
+.box.active{background:var(--hi-soft);border-color:var(--hi);transform:translateY(-6px)}
+.box.ghost{border:2px dashed var(--bad);color:var(--bad);background:var(--bad-soft)}
+.col.gh{opacity:0;transition:opacity .3s}
+.col.gh.show{opacity:1}
+.idx{margin-top:6px;font:600 .9rem "JetBrains Mono",ui-monospace,monospace}
+.col.gh .idx{color:var(--bad)}
+.ptr{height:1.4em;margin-top:2px;font:600 .85rem "JetBrains Mono",ui-monospace,monospace;color:var(--accent)}
+.legend{margin:10px 0 0;color:var(--muted);font-size:.85rem}
+.stats{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.chip{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 12px;font:400 .85rem "JetBrains Mono",ui-monospace,monospace;min-width:92px}
+.chip b{color:var(--accent);font-weight:600}
+.cap{margin-top:14px;padding:12px 14px;border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:0 8px 8px 0;min-height:4.6em}
+.cap.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.ctrl{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px}
+button{font:600 .95rem "Bricolage Grotesque",system-ui,sans-serif;color:var(--ink);background:var(--panel);border:1.5px solid var(--ink);border-radius:8px;padding:8px 14px;cursor:pointer}
+button.primary{background:var(--ink);color:var(--panel)}
+button:disabled{opacity:.4;cursor:default}
+button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
+.step{font:400 .85rem "JetBrains Mono",ui-monospace,monospace;color:var(--muted)}
+.facts{margin:22px 0 0;display:grid;gap:12px}
+@media(min-width:820px){.facts{grid-template-columns:repeat(3,1fr)}}
+.facts p{margin:0;font-size:.95rem}
+.facts strong{display:block;margin-bottom:2px}
+</style>
+</head>
+<body>
+<main>
+  <h1>How an array works in C</h1>
+  <p class="lead">An array is a row of boxes in memory, all the same type, side by side. Step through the code to watch each line change the boxes.</p>
+
+  <div class="grid">
+    <div class="card">
+      <pre id="code" aria-label="C code"></pre>
+    </div>
+    <div class="card">
+      <div class="mem" id="mem"></div>
+      <p class="legend">Small numbers on top are memory addresses. Each <code>int</code> takes 4 bytes. Numbers below are indexes.</p>
+      <div class="stats">
+        <div class="chip">i = <b id="vi">–</b></div>
+        <div class="chip">sum = <b id="vs">–</b></div>
+        <div class="chip">output: <b id="vo">–</b></div>
+      </div>
+      <div class="cap" id="cap" aria-live="polite"></div>
+      <div class="ctrl">
+        <button id="prev">Back</button>
+        <button id="play" class="primary">Play</button>
+        <button id="next">Next</button>
+        <button id="reset">Restart</button>
+      </div>
+      <div class="ctrl">
+        <input id="seek" type="range" min="0" value="0" aria-label="Step">
+        <span class="step" id="stepn"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="facts">
+    <p><strong>Indexes start at 0.</strong>An array of 5 items has indexes 0, 1, 2, 3 and 4.</p>
+    <p><strong>Size is fixed.</strong>After you write <code>marks[5]</code> in the declaration, the array can’t grow.</p>
+    <p><strong>C doesn’t check bounds.</strong>Going past the last index compiles fine but breaks your program.</p>
+  </div>
+</main>
+
+<script>
+(function(){
+  var code = [
+    'int marks[5];',
+    'marks[0] = 90;',
+    'marks[1] = 75;',
+    'marks[2] = 60;',
+    'marks[3] = 85;',
+    'marks[4] = 70;',
+    'printf("%d", marks[2]);',
+    'for (int i = 0; i < 5; i++) {',
+    '    sum += marks[i];',
+    '}',
+    'marks[5] = 100;  // oops!'
+  ];
+  var vals = [90,75,60,85,70];
+  var S = [];
+  S.push({lines:[0], filled:0, cap:'<code>int marks[5];</code> reserves 5 boxes in a row. Each box holds one <code>int</code>. Nothing is stored yet, so each box holds leftover junk, shown as ?.'});
+  for (var k=0;k<5;k++){
+    S.push({lines:[k+1], filled:k+1, active:k,
+      cap: k===0 ? 'Put 90 in box 0. The first box is number 0, not 1.' : 'Put '+vals[k]+' in box '+k+'. The number in brackets is the index.'});
+  }
+  S.push({lines:[6], filled:5, active:2, out:'60', cap:'<code>marks[2]</code> reads box 2. That is the third box, because counting starts at 0. It prints 60.'});
+  var sum = 0;
+  for (var i=0;i<5;i++){
+    sum += vals[i];
+    S.push({lines:[7,8], filled:5, active:i, ptr:i, i:i, sum:sum, out:'60',
+      cap:'Loop pass '+(i+1)+': i is '+i+', so <code>sum += marks['+i+']</code> adds '+vals[i]+'. sum is now '+sum+'.'});
+  }
+  S.push({lines:[7], filled:5, ptr:5, i:5, sum:sum, out:'60',
+    cap:'i becomes 5 and <code>5 &lt; 5</code> is false, so the loop stops. Looping over 5 items means i runs from 0 to 4.'});
+  S.push({lines:[10], filled:5, bad:true, ghost:true, sum:sum, i:5, out:'60',
+    cap:'<code>marks[5]</code> would be a sixth box, but the array has only five. C won’t stop you. It writes into memory that belongs to something else. Keep the index below the array size.'});
+
+  var codeEl = document.getElementById('code');
+  var lineEls = code.map(function(t){
+    var s = document.createElement('span'); s.className='ln';
+    var idx = t.indexOf('//');
+    if(idx>-1){ s.appendChild(document.createTextNode(t.slice(0,idx))); var c=document.createElement('span'); c.className='cm'; c.textContent=t.slice(idx); s.appendChild(c); }
+    else s.textContent = t;
+    codeEl.appendChild(s); return s;
+  });
+
+  var mem = document.getElementById('mem');
+  var cols = [];
+  for (var n=0;n<6;n++){
+    var col = document.createElement('div'); col.className='col'+(n===5?' gh':'');
+    col.innerHTML = '<div class="addr">'+(1000+n*4)+'</div><div class="box empty">?</div><div class="idx">['+n+']</div><div class="ptr"></div>';
+    mem.appendChild(col); cols.push(col);
+  }
+
+  var seek = document.getElementById('seek');
+  seek.max = S.length-1;
+  var cur = 0, timer = null;
+  var $ = function(id){return document.getElementById(id)};
+
+  function render(){
+    var s = S[cur];
+    lineEls.forEach(function(el,j){
+      var on = s.lines.indexOf(j)>-1;
+      el.className = 'ln'+(on?' on':'')+(on&&s.bad?' bad':'');
+    });
+    cols.forEach(function(col,n){
+      var box = col.children[1], ptr = col.children[3];
+      var filled = n < 5 && n < s.filled;
+      box.textContent = filled ? vals[n] : '?';
+      var cls = 'box'+(filled?'':' empty');
+      if(n<5 && s.active===n) cls += ' active';
+      if(n===5) cls = 'box ghost', box.textContent = '!';
+      box.className = cls;
+      ptr.textContent = (s.ptr===n) ? '▲ i' : '';
+      if(n===5) col.className = 'col gh'+(s.ghost?' show':'');
+    });
+    $('vi').textContent = s.i===undefined ? '–' : s.i;
+    $('vs').textContent = s.sum===undefined ? '–' : s.sum;
+    $('vo').textContent = s.out===undefined ? '–' : s.out;
+    var cap = $('cap'); cap.innerHTML = s.cap; cap.className = 'cap'+(s.bad?' bad':'');
+    seek.value = cur;
+    $('stepn').textContent = 'Step '+(cur+1)+' of '+S.length;
+    $('prev').disabled = cur===0;
+    $('next').disabled = cur===S.length-1;
+    if(cur===S.length-1) stop();
+  }
+  function stop(){ if(timer){clearInterval(timer);timer=null;} $('play').textContent = (cur===S.length-1)?'Replay':'Play'; }
+  function play(){
+    if(cur===S.length-1){cur=0;render();}
+    $('play').textContent='Pause';
+    timer = setInterval(function(){ if(cur<S.length-1){cur++;render();} else stop(); }, 2200);
+  }
+  $('play').onclick = function(){ timer ? stop() : play(); };
+  $('next').onclick = function(){ stop(); if(cur<S.length-1){cur++;render();} };
+  $('prev').onclick = function(){ stop(); if(cur>0){cur--;render();} };
+  $('reset').onclick = function(){ stop(); cur=0; render(); };
+  seek.oninput = function(){ stop(); cur=+seek.value; render(); };
+  document.addEventListener('keydown', function(e){
+    if(e.key==='ArrowRight') $('next').click();
+    else if(e.key==='ArrowLeft') $('prev').click();
+  });
+  render();
+})();
+</script>
+</body>
+</html>
